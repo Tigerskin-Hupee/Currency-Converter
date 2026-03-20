@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>貨幣換算</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    :root {
+      --bg-primary:    #121212;
+      --bg-card:       #1E1E1E;
+      --bg-input:      #2A2A2A;
+      --bg-hover:      #2F2F2F;
+      --accent:        #1A8CFF;
+      --accent-glow:   rgba(26, 140, 255, 0.25);
+      --text-primary:  #F0F0F0;
+      --text-secondary:#9E9E9E;
+      --text-value:    #FFFFFF;
+      --border:        #333333;
+      --border-focus:  #1A8CFF;
+      --success:       #4CAF50;
+      --error:         #F44336;
+      --divider:       #2A2A2A;
+    }
+
+    html, body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: -apple-system, 'PingFang TC', 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
+      min-height: 100vh;
+      overscroll-behavior: none;
+    }
+
+    /* ── Header ── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-primary);
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--divider);
+    }
+
+    .header-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--text-primary);
+    }
+
+    .header-subtitle {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-secondary);
+      flex-shrink: 0;
+    }
+    .status-dot.online  { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .status-dot.offline { background: var(--error); }
+    .status-dot.loading {
+      background: var(--accent);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    .status-text {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .refresh-btn {
+      margin-left: auto;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      color: var(--accent);
+      font-size: 12px;
+      padding: 4px 12px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .refresh-btn:active { background: var(--bg-hover); }
+
+    /* ── Currency list ── */
+    .currency-list {
+      padding: 12px 12px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .currency-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .currency-row.active {
+      border-color: var(--border-focus);
+      background: #1A2535;
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    .flag {
+      font-size: 30px;
+      line-height: 1;
+      flex-shrink: 0;
+      width: 36px;
+      text-align: center;
+    }
+
+    .currency-info {
+      flex: 0 0 auto;
+      min-width: 68px;
+    }
+
+    .currency-code {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.5px;
+    }
+
+    .currency-name {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+      white-space: nowrap;
+    }
+
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+    }
+
+    .currency-input {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid transparent;
+      border-radius: 10px;
+      color: var(--text-value);
+      font-size: 20px;
+      font-weight: 600;
+      padding: 10px 14px;
+      text-align: right;
+      outline: none;
+      transition: border-color 0.2s, background 0.2s;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .currency-input:focus {
+      border-color: var(--border-focus);
+      background: #1E2A3A;
+    }
+
+    .currency-input::placeholder {
+      color: var(--text-secondary);
+      font-weight: 400;
+    }
+
+    /* remove number spinners */
+    .currency-input::-webkit-outer-spin-button,
+    .currency-input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+    }
+    .currency-input[type=number] { -moz-appearance: textfield; }
+
+    .rate-hint {
+      font-size: 10px;
+      color: var(--text-secondary);
+      text-align: right;
+      margin-top: 3px;
+      padding-right: 2px;
+    }
+
+    /* ── Loading overlay ── */
+    #loadingOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(18, 18, 18, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      gap: 16px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    /* ── Error banner ── */
+    #errorBanner {
+      display: none;
+      background: rgba(244, 67, 54, 0.15);
+      border: 1px solid rgba(244, 67, 54, 0.4);
+      border-radius: 10px;
+      color: #FF7043;
+      font-size: 12px;
+      padding: 10px 14px;
+      margin: 0 12px 8px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">載入匯率中…</div>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-title">💱 貨幣換算</div>
+  <div class="header-subtitle">多幣別即時換算</div>
+  <div class="status-bar">
+    <div class="status-dot" id="statusDot"></div>
+    <div class="status-text" id="statusText">連線中…</div>
+    <button class="refresh-btn" onclick="fetchRates()">↻ 更新</button>
+  </div>
+</div>
+
+<!-- Error banner -->
+<div id="errorBanner"></div>
+
+<!-- Currency rows -->
+<div class="currency-list" id="currencyList"></div>
+
+<script>
+  // ── Configuration ──────────────────────────────────────────────
+  const RATES_URL = 'https://your-worker.workers.dev/rates';
+
+  const CURRENCIES = [
+    { code: 'TWD', flag: '🇹🇼', name: '台灣新台幣' },
+    { code: 'USD', flag: '🇺🇸', name: '美元' },
+    { code: 'EUR', flag: '🇪🇺', name: '歐元' },
+    { code: 'HKD', flag: '🇭🇰', name: '港幣' },
+    { code: 'CNY', flag: '🇨🇳', name: '人民幣' },
+    { code: 'JPY', flag: '🇯🇵', name: '日圓' },
+    { code: 'KRW', flag: '🇰🇷', name: '韓元' },
+    { code: 'THB', flag: '🇹🇭', name: '泰銖' },
+    { code: 'VND', flag: '🇻🇳', name: '越南盾' },
+    { code: 'MYR', flag: '🇲🇾', name: '馬來西亞令吉' },
+    { code: 'SGD', flag: '🇸🇬', name: '新加坡元' },
+    { code: 'IDR', flag: '🇮🇩', name: '印尼盾' },
+    { code: 'PHP', flag: '🇵🇭', name: '菲律賓披索' },
+  ];
+
+  // Fallback rates (TWD base), used when API is unavailable
+  const FALLBACK_RATES = {
+    TWD: 1,
+    USD: 0.03125,
+    EUR: 0.02884,
+    HKD: 0.24390,
+    CNY: 0.22727,
+    JPY: 4.71698,
+    KRW: 41.6667,
+    THB: 1.12360,
+    VND: 793.651,
+    MYR: 0.14493,
+    SGD: 0.04202,
+    IDR: 505.051,
+    PHP: 1.78571,
+  };
+
+  // ── State ──────────────────────────────────────────────────────
+  let rates        = {};      // code → rate (base: TWD)
+  let activeCode   = null;
+  let lastUpdated  = null;
+
+  // ── Build UI ───────────────────────────────────────────────────
+  function buildUI() {
+    const list = document.getElementById('currencyList');
+    list.innerHTML = '';
+
+    CURRENCIES.forEach(({ code, flag, name }) => {
+      const row = document.createElement('div');
+      row.className = 'currency-row';
+      row.id = `row-${code}`;
+      row.innerHTML = `
+        <div class="flag">${flag}</div>
+        <div class="currency-info">
+          <div class="currency-code">${code}</div>
+          <div class="currency-name">${name}</div>
+        </div>
+        <div class="input-wrapper">
+          <input
+            id="input-${code}"
+            class="currency-input"
+            type="number"
+            inputmode="decimal"
+            placeholder="0"
+            autocomplete="off"
+          />
+          <div class="rate-hint" id="hint-${code}"></div>
+        </div>`;
+
+      const input = row.querySelector(`#input-${code}`);
+
+      input.addEventListener('focus', () => {
+        activeCode = code;
+        document.querySelectorAll('.currency-row').forEach(r => r.classList.remove('active'));
+        row.classList.add('active');
+      });
+
+      input.addEventListener('input', () => {
+        if (activeCode === code) recalculate(code);
+      });
+
+      input.addEventListener('blur', () => {
+        setTimeout(() => {
+          if (activeCode === code) activeCode = null;
+        }, 200);
+      });
+
+      list.appendChild(row);
+    });
+  }
+
+  // ── Recalculate ────────────────────────────────────────────────
+  function recalculate(sourceCode) {
+    const sourceInput = document.getElementById(`input-${sourceCode}`);
+    const raw = sourceInput.value.trim();
+
+    if (raw === '' || isNaN(parseFloat(raw))) {
+      CURRENCIES.forEach(({ code }) => {
+        if (code !== sourceCode) {
+          const el = document.getElementById(`input-${code}`);
+          if (el) el.value = '';
+        }
+      });
+      return;
+    }
+
+    const sourceValue = parseFloat(raw);
+    const sourceRate  = rates[sourceCode] || 1;
+    // Convert to TWD base first
+    const twdValue = sourceValue / sourceRate;
+
+    CURRENCIES.forEach(({ code }) => {
+      if (code === sourceCode) return;
+      const targetRate = rates[code] || 1;
+      const result     = twdValue * targetRate;
+      const el         = document.getElementById(`input-${code}`);
+      if (el) el.value = formatNumber(code, result);
+    });
+  }
+
+  // ── Number formatting ──────────────────────────────────────────
+  function formatNumber(code, value) {
+    if (value === 0) return '';
+    // Currencies with no decimal places
+    const noDecimal = ['JPY', 'KRW', 'VND', 'IDR'];
+    if (noDecimal.includes(code)) {
+      return Math.round(value).toString();
+    }
+    // Currencies with 4 decimal places
+    const highDecimal = [];
+    const decimals = value < 0.1 ? 4 : value < 10 ? 3 : 2;
+    return parseFloat(value.toFixed(decimals)).toString();
+  }
+
+  // ── Rate hints ─────────────────────────────────────────────────
+  function updateHints() {
+    const twdRate = rates['TWD'] || 1;
+    CURRENCIES.forEach(({ code }) => {
+      const hint = document.getElementById(`hint-${code}`);
+      if (!hint) return;
+      if (code === 'TWD') {
+        hint.textContent = '基準貨幣';
+      } else {
+        const r = rates[code];
+        if (r) {
+          const per1 = (r / twdRate).toFixed(code === 'JPY' || code === 'KRW' || code === 'VND' || code === 'IDR' ? 2 : 4);
+          hint.textContent = `1 TWD ≈ ${per1} ${code}`;
+        }
+      }
+    });
+  }
+
+  // ── Fetch rates ────────────────────────────────────────────────
+  async function fetchRates() {
+    setStatus('loading', '更新匯率中…');
+    hideError();
+
+    try {
+      const controller = new AbortController();
+      const timeoutId  = setTimeout(() => controller.abort(), 10000);
+
+      const res = await fetch(RATES_URL, {
+        signal: controller.signal,
+        cache:  'no-cache',
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+
+      // Accept either { rates: { TWD: 1, USD: 0.031, ... } } or { TWD: 1, ... }
+      const rawRates = data.rates || data;
+
+      // Validate — must have at least TWD
+      if (!rawRates || typeof rawRates !== 'object') {
+        throw new Error('回傳資料格式錯誤');
+      }
+
+      applyRates(rawRates);
+      lastUpdated = new Date();
+      setStatus('online', `更新時間：${formatDate(lastUpdated)}`);
+    } catch (err) {
+      console.warn('fetchRates error:', err.message);
+      applyRates(FALLBACK_RATES);
+      lastUpdated = new Date();
+
+      const isCORS   = err.message.includes('Failed to fetch') || err.message.includes('NetworkError');
+      const isAbort  = err.name === 'AbortError';
+      const hint     = isAbort
+        ? '請求逾時，已套用內建估算匯率。'
+        : isCORS
+        ? '無法連接匯率伺服器，已套用內建估算匯率。\n請至 README 設定 Cloudflare Worker URL。'
+        : `無法取得最新匯率（${err.message}），已套用內建估算匯率。`;
+
+      showError(hint);
+      setStatus('offline', `離線估算 ‧ ${formatDate(lastUpdated)}`);
+    } finally {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    }
+  }
+
+  function applyRates(rawRates) {
+    // Normalise to TWD base
+    const base = rawRates['TWD'] || 1;
+    CURRENCIES.forEach(({ code }) => {
+      if (rawRates[code] !== undefined) {
+        rates[code] = rawRates[code] / base;
+      }
+    });
+    updateHints();
+
+    // Re-calculate if there's an active input
+    if (activeCode) {
+      const el = document.getElementById(`input-${activeCode}`);
+      if (el && el.value) recalculate(activeCode);
+    }
+  }
+
+  // ── Status helpers ─────────────────────────────────────────────
+  function setStatus(state, text) {
+    const dot  = document.getElementById('statusDot');
+    const label = document.getElementById('statusText');
+    dot.className  = `status-dot ${state}`;
+    label.textContent = text;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorBanner');
+    el.style.display = 'block';
+    el.textContent   = msg;
+  }
+
+  function hideError() {
+    document.getElementById('errorBanner').style.display = 'none';
+  }
+
+  // ── Date formatting ────────────────────────────────────────────
+  function formatDate(d) {
+    const y  = d.getFullYear();
+    const mo = d.getMonth() + 1;
+    const day = d.getDate();
+    const h  = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return `${y}年${mo}月${day}日 ${h}:${mi}`;
+  }
+
+  // ── Init ───────────────────────────────────────────────────────
+  buildUI();
+  fetchRates();
+</script>
+</body>
+</html>
