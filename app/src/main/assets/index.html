@@ -120,13 +120,52 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      transition: border-color 0.2s, background 0.2s;
+      transition: border-color 0.2s, background 0.2s, opacity 0.15s, transform 0.15s;
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     .currency-row.active {
       border-color: var(--border-focus);
       background: #1A2535;
       box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    /* ── Drag states ── */
+    .currency-row.dragging {
+      opacity: 0.45;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-glow), 0 4px 16px rgba(0,0,0,0.5);
+      transform: scale(1.02);
+      position: relative;
+      z-index: 10;
+    }
+
+    .currency-row.drag-over {
+      border-color: var(--accent);
+      background: #1A2535;
+    }
+
+    .drag-handle {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      flex-shrink: 0;
+      padding: 4px 2px;
+      cursor: grab;
+      opacity: 0.35;
+      touch-action: none;
+    }
+    .drag-handle span {
+      display: block;
+      width: 18px;
+      height: 2px;
+      background: var(--text-secondary);
+      border-radius: 1px;
+    }
+    .currency-row.dragging .drag-handle {
+      cursor: grabbing;
+      opacity: 0.7;
     }
 
     .flag {
@@ -272,6 +311,7 @@
 <script>
   // ── Configuration ──────────────────────────────────────────────
   const RATES_URL = 'https://currency-rates.makotoforgame.workers.dev/';
+  const ORDER_KEY = 'currency-order-v1';
 
   const CURRENCIES = [
     { code: 'TWD', flag: '🇹🇼', name: '台灣新台幣' },
@@ -311,6 +351,26 @@
   let activeCode   = null;
   let lastUpdated  = null;
 
+  // ── Order persistence ──────────────────────────────────────────
+  function loadOrder() {
+    try {
+      const saved = localStorage.getItem(ORDER_KEY);
+      if (!saved) return;
+      const order = JSON.parse(saved);
+      if (!Array.isArray(order) || order.length === 0) return;
+      const map = Object.fromEntries(CURRENCIES.map(c => [c.code, c]));
+      const sorted = order.filter(code => map[code]).map(code => map[code]);
+      const remaining = CURRENCIES.filter(c => !order.includes(c.code));
+      CURRENCIES.splice(0, CURRENCIES.length, ...sorted, ...remaining);
+    } catch (e) { /* ignore */ }
+  }
+
+  function saveOrder() {
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(CURRENCIES.map(c => c.code)));
+    } catch (e) { /* ignore */ }
+  }
+
   // ── Build UI ───────────────────────────────────────────────────
   function buildUI() {
     const list = document.getElementById('currencyList');
@@ -320,7 +380,11 @@
       const row = document.createElement('div');
       row.className = 'currency-row';
       row.id = `row-${code}`;
+      row.dataset.code = code;
       row.innerHTML = `
+        <div class="drag-handle" aria-label="拖拉排序">
+          <span></span><span></span><span></span>
+        </div>
         <div class="flag">${flag}</div>
         <div class="currency-info">
           <div class="currency-code">${code}</div>
@@ -358,6 +422,121 @@
 
       list.appendChild(row);
     });
+  }
+
+  // ── Drag-and-drop sorting ──────────────────────────────────────
+  let drag = null; // active drag state
+
+  function setupDragAndDrop() {
+    const list = document.getElementById('currencyList');
+    list.addEventListener('touchstart',  onTouchStart,  { passive: true });
+    list.addEventListener('touchmove',   onTouchMove,   { passive: false });
+    list.addEventListener('touchend',    onTouchEnd,    { passive: true });
+    list.addEventListener('touchcancel', cancelDrag,    { passive: true });
+  }
+
+  function onTouchStart(e) {
+    const row = e.target.closest('.currency-row');
+    if (!row) return;
+    // Let the input handle its own touches
+    if (e.target.closest('.currency-input')) return;
+
+    const touch = e.touches[0];
+    drag = {
+      row,
+      startX:  touch.clientX,
+      startY:  touch.clientY,
+      active:  false,
+      overRow: null,
+      timer:   setTimeout(() => activateDrag(row), 450),
+    };
+  }
+
+  function activateDrag(row) {
+    if (!drag || drag.row !== row) return;
+    drag.active = true;
+    row.classList.add('dragging');
+  }
+
+  function onTouchMove(e) {
+    if (!drag) return;
+
+    const touch = e.touches[0];
+    const dx = touch.clientX - drag.startX;
+    const dy = touch.clientY - drag.startY;
+
+    // Cancel long-press timer if finger moved significantly before activation
+    if (!drag.active) {
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        clearTimeout(drag.timer);
+        drag = null;
+      }
+      return;
+    }
+
+    e.preventDefault(); // Prevent page scroll while dragging
+
+    const list = document.getElementById('currencyList');
+    const rows = [...list.querySelectorAll('.currency-row')];
+
+    // Find the row under the current touch point
+    let target = null;
+    for (const r of rows) {
+      if (r === drag.row) continue;
+      const rect = r.getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        target = r;
+        break;
+      }
+    }
+
+    // Update drag-over highlight
+    if (drag.overRow && drag.overRow !== target) {
+      drag.overRow.classList.remove('drag-over');
+    }
+    if (target) {
+      target.classList.add('drag-over');
+      drag.overRow = target;
+
+      // Reorder in DOM
+      const dragIdx   = rows.indexOf(drag.row);
+      const targetIdx = rows.indexOf(target);
+      if (targetIdx < dragIdx) {
+        list.insertBefore(drag.row, target);
+      } else {
+        list.insertBefore(drag.row, target.nextSibling);
+      }
+    }
+  }
+
+  function onTouchEnd() {
+    if (!drag) return;
+    clearTimeout(drag.timer);
+
+    if (drag.active) {
+      drag.row.classList.remove('dragging');
+      if (drag.overRow) drag.overRow.classList.remove('drag-over');
+
+      // Sync CURRENCIES array to current DOM order and persist
+      const list = document.getElementById('currencyList');
+      const rows = [...list.querySelectorAll('.currency-row')];
+      const map  = Object.fromEntries(CURRENCIES.map(c => [c.code, c]));
+      const newOrder = rows.map(r => map[r.dataset.code]).filter(Boolean);
+      CURRENCIES.splice(0, CURRENCIES.length, ...newOrder);
+      saveOrder();
+    }
+
+    drag = null;
+  }
+
+  function cancelDrag() {
+    if (!drag) return;
+    clearTimeout(drag.timer);
+    if (drag.active) {
+      drag.row.classList.remove('dragging');
+      if (drag.overRow) drag.overRow.classList.remove('drag-over');
+    }
+    drag = null;
   }
 
   // ── Recalculate ────────────────────────────────────────────────
@@ -517,7 +696,9 @@
   }
 
   // ── Init ───────────────────────────────────────────────────────
+  loadOrder();
   buildUI();
+  setupDragAndDrop();
   fetchRates();
 </script>
 </body>
